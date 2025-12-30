@@ -5,6 +5,21 @@ const cache = new NodeCache({
     stdTTL: 600
 });
 
+const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
+
+const USER_AGENTS = [
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0',
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.1 Safari/605.1.15',
+    'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36 Edg/119.0.0.0',
+    'Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:121.0) Gecko/20100101 Firefox/121.0',
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36'
+];
+
+let userAgentIndex = 0;
+
 class StorytelProvider {
     constructor() {
         this.baseSearchUrl = 'https://www.storytel.com/api/search.action';
@@ -12,39 +27,38 @@ class StorytelProvider {
         this.locale = 'en';
     }
 
-    /**
-     * Sets the locale for the provider
-     * @param locale {string} The locale to set
-     */
     setLocale(locale) {
         this.locale = locale;
     }
 
-    /**
-     * Ensures a value is a string and trims it. Used for cleaning up data and returns
-     * @param value
-     * @returns {string}
-     */
+    getNextUserAgent() {
+        const ua = USER_AGENTS[userAgentIndex];
+        userAgentIndex = (userAgentIndex + 1) % USER_AGENTS.length;
+        return ua;
+    }
+
+    createFreshAxios(userAgent) {
+        return axios.create({
+            headers: {
+                'User-Agent': userAgent,
+                'Accept': 'application/json, text/javascript, */*; q=0.01',
+                'Accept-Language': 'en-US,en;q=0.9',
+                'Accept-Encoding': 'gzip, deflate, br'
+            },
+            timeout: 30000
+        });
+    }
+
     ensureString(value) {
         if (value === null || value === undefined) return '';
         return String(value).trim();
     }
 
-    /**
-     * Upgrades the cover URL to a higher resolution
-     * @param url
-     * @returns {undefined|string}
-     */
     upgradeCoverUrl(url) {
         if (!url) return undefined;
         return `https://storytel.com${url.replace('320x320', '640x640')}`;
     }
 
-    /**
-     * Splits a genre by / or , and trims the resulting strings
-     * @param genre {string}
-     * @returns {*[]}
-     */
     splitGenre(genre) {
         if (!genre) return [];
         return genre.split(/[\/,]/).map(g => {
@@ -53,20 +67,10 @@ class StorytelProvider {
         });
     }
 
-    /**
-     * Escapes special characters in RegEx patterns
-     * @param str {string} String to escape
-     * @returns {string}
-     */
     escapeRegex(str) {
         return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     }
 
-    /**
-     * Formats the book metadata to the ABS format
-     * @param bookData
-     * @returns {{title: (string|string), subtitle: *, author: (string|string), language: (string|string), genres: (*[]|undefined), tags: undefined, series: null, cover: string, duration: (number|undefined), narrator: (*|undefined), description: (string|string), publisher: (string|string), publishedYear: string | undefined, isbn: (string|string)}|null}
-     */
     formatBookMetadata(bookData) {
         const slb = bookData.slb;
         if (!slb || !slb.book) return null;
@@ -88,117 +92,48 @@ class StorytelProvider {
         }
 
         const author = this.ensureString(book.authorsAsString);
-
         let title = book.name;
         let subtitle = null;
 
-        // These patterns match various series and volume indicators across different languages
-        // Current Patterns for all Storytel regions
         const patterns = [
-
-            // Belgium / Netherlands
-            /^.*?,\s*Aflevering\s*\d+:\s*/i,      // Dutch: "Aflevering" (Episode)
-            /^.*?,\s*Deel\s*\d+:\s*/i,            // Dutch: "Deel" (Part)
-
-            // Brazil
-            /^.*?,\s*Episódio\s*\d+:\s*/i,        // Portuguese: "Episódio" (Episode)
-            /^.*?,\s*Parte\s*\d+:\s*/i,           // Portuguese: "Parte" (Part)
-
-            // Bulgaria
-            /^.*?,\s*епизод\s*\d+:\s*/i,          // Bulgarian: "епизод" (Episode)
-            /^.*?,\s*том\s*\d+:\s*/i,             // Bulgarian: "том" (Volume)
-            /^.*?,\s*част\s*\d+:\s*/i,            // Bulgarian: "част" (Part)
-
-            // Colombia / Spain
-            /^.*?,\s*Episodio\s*\d+:\s*/i,        // Spanish: "Episodio" (Episode)
-            /^.*?,\s*Volumen\s*\d+:\s*/i,         // Spanish: "Volumen" (Volume)
-
-            // Denmark
-            /^.*?,\s*Afsnit\s*\d+:\s*/i,          // Danish: "Afsnit" (Episode)
-            /^.*?,\s*Bind\s*\d+:\s*/i,            // Danish: "Bind" (Volume)
-            /^.*?,\s*Del\s*\d+:\s*/i,             // Danish: "Del" (Part)
-
-            // Egypt / Saudi Arabia / United Arab Emirates
-            /^.*?,\s*حلقة\s*\d+:\s*/i,            // Arabic: "حلقة" (Episode)
-            /^.*?,\s*مجلد\s*\d+:\s*/i,            // Arabic: "مجلد" (Volume)
-            /^.*?,\s*جزء\s*\d+:\s*/i,             // Arabic: "جزء" (Part)
-
-            // Finland
-            /^.*?,\s*Jakso\s*\d+:\s*/i,           // Finnish: "Jakso" (Episode)
-            /^.*?,\s*Volyymi\s*\d+:\s*/i,         // Finnish: "Volyymi" (Volume)
-            /^.*?,\s*Osa\s*\d+:\s*/i,             // Finnish: "Osa" (Part)
-
-            // France
-            /^.*?,\s*Épisode\s*\d+:\s*/i,         // French: "Épisode" (Episode)
-            /^.*?,\s*Tome\s*\d+:\s*/i,            // French: "Tome" (Volume)
-            /^.*?,\s*Partie\s*\d+:\s*/i,          // French: "Partie" (Part)
-
-            // Indonesia
-            /^.*?,\s*Episode\s*\d+:\s*/i,         // Indonesian: "Episode"
-            /^.*?,\s*Bagian\s*\d+:\s*/i,          // Indonesian: "Bagian" (Part)
-
-            // Israel
-            /^.*?,\s*פרק\s*\d+:\s*/i,             // Hebrew: "פרק" (Chapter)
-            /^.*?,\s*כרך\s*\d+:\s*/i,             // Hebrew: "כרך" (Volume)
-            /^.*?,\s*חלק\s*\d+:\s*/i,             // Hebrew: "חלק" (Part)
-
-            // India
-            /^.*?,\s*कड़ी\s*\d+:\s*/i,             // Hindi: "कड़ी" (Episode)
-            /^.*?,\s*खण्ड\s*\d+:\s*/i,            // Hindi: "खण्ड" (Volume)
-            /^.*?,\s*भाग\s*\d+:\s*/i,             // Hindi: "भाग" (Part)
-
-            // Iceland
-            /^.*?,\s*Þáttur\s*\d+:\s*/i,          // Icelandic: "Þáttur" (Episode)
-            /^.*?,\s*Bindi\s*\d+:\s*/i,           // Icelandic: "Bindi" (Volume)
-            /^.*?,\s*Hluti\s*\d+:\s*/i,           // Icelandic: "Hluti" (Part)
-
-            // Poland
-            /^.*?,\s*Odcinek\s*\d+:\s*/i,         // Polish: "Odcinek" (Episode)
-            /^.*?,\s*Tom\s*\d+:\s*/i,             // Polish: "Tom" (Volume)
-            /^.*?,\s*Część\s*\d+:\s*/i,           // Polish: "Część" (Part)
-
-            // Sweden
-            /^.*?,\s*Avsnitt\s*\d+:\s*/i,         // Swedish: "Avsnitt" (Episode)
+            /^.*?,\s*Aflevering\s*\d+:\s*/i, /^.*?,\s*Deel\s*\d+:\s*/i,
+            /^.*?,\s*Episódio\s*\d+:\s*/i, /^.*?,\s*Parte\s*\d+:\s*/i,
+            /^.*?,\s*епизод\s*\d+:\s*/i, /^.*?,\s*том\s*\d+:\s*/i,
+            /^.*?,\s*част\s*\d+:\s*/i, /^.*?,\s*Episodio\s*\d+:\s*/i,
+            /^.*?,\s*Volumen\s*\d+:\s*/i, /^.*?,\s*Afsnit\s*\d+:\s*/i,
+            /^.*?,\s*Bind\s*\d+:\s*/i, /^.*?,\s*Del\s*\d+:\s*/i,
+            /^.*?,\s*حلقة\s*\d+:\s*/i, /^.*?,\s*مجلد\s*\d+:\s*/i,
+            /^.*?,\s*جزء\s*\d+:\s*/i, /^.*?,\s*Jakso\s*\d+:\s*/i,
+            /^.*?,\s*Volyymi\s*\d+:\s*/i, /^.*?,\s*Osa\s*\d+:\s*/i,
+            /^.*?,\s*Épisode\s*\d+:\s*/i, /^.*?,\s*Tome\s*\d+:\s*/i,
+            /^.*?,\s*Partie\s*\d+:\s*/i, /^.*?,\s*Episode\s*\d+:\s*/i,
+            /^.*?,\s*Bagian\s*\d+:\s*/i, /^.*?,\s*פרק\s*\d+:\s*/i,
+            /^.*?,\s*כרך\s*\d+:\s*/i, /^.*?,\s*חלק\s*\d+:\s*/i,
+            /^.*?,\s*कड़ी\s*\d+:\s*/i, /^.*?,\s*खण्ड\s*\d+:\s*/i,
+            /^.*?,\s*भाग\s*\d+:\s*/i, /^.*?,\s*Þáttur\s*\d+:\s*/i,
+            /^.*?,\s*Bindi\s*\d+:\s*/i, /^.*?,\s*Hluti\s*\d+:\s*/i,
+            /^.*?,\s*Odcinek\s*\d+:\s*/i, /^.*?,\s*Tom\s*\d+:\s*/i,
+            /^.*?,\s*Część\s*\d+:\s*/i, /^.*?,\s*Avsnitt\s*\d+:\s*/i,
+            /^.*?,\s*Folge\s*\d+:\s*/i, /^.*?,\s*Band\s*\d+:\s*/i,
+            /^.*?\s+-\s+\d+:\s*/i, /^.*?\s+\d+:\s*/i,
+            /^.*?,\s*Teil\s*\d+:\s*/i, /^.*?,\s*Volume\s*\d+:\s*/i,
+            /\s*\((Ungekürzt|Gekürzt)\)\s*$/i, /,\s*Teil\s+\d+$/i,
+            /-\s*.*?(?:Reihe|Serie)\s+\d+$/i
         ];
 
-        // Additional German patterns for special cases
-        const germanPatterns = [
-            /^.*?,\s*Folge\s*\d+:\s*/i,           // "Folge" (Episode)
-            /^.*?,\s*Band\s*\d+:\s*/i,            // "Band" (Volume)
-            /^.*?\s+-\s+\d+:\s*/i,                // Title - 1: format
-            /^.*?\s+\d+:\s*/i,                    // Title 1: format
-            /^.*?,\s*Teil\s*\d+:\s*/i,            // "Teil" (Part)
-            /^.*?,\s*Volume\s*\d+:\s*/i,          // "Volume"
-            /\s*\((Ungekürzt|Gekürzt)\)\s*$/i,    // (Unabridged/Abridged)
-            /,\s*Teil\s+\d+$/i,                   // ", Teil X" at end
-            /-\s*.*?(?:Reihe|Serie)\s+\d+$/i      // "- Serie X" at end
-        ];
-
-        const allPatterns = [...patterns, ...germanPatterns];
-
-        // Clean up the title by removing all pattern matches
-        allPatterns.forEach(pattern => {
-            title = title.replace(pattern, '');
-        });
+        patterns.forEach(pattern => title = title.replace(pattern, ''));
 
         if (seriesInfo) {
             subtitle = `${seriesName} ${book.seriesOrder}`;
-
-            // Removes series from title name
             if (title.includes(seriesName)) {
                 const safeSeriesName = this.escapeRegex(seriesName);
                 const regex = new RegExp(`^(.+?)[-,]\\s*${safeSeriesName}`, 'i');
-
                 const beforeSeriesMatch = title.match(regex);
-                if (beforeSeriesMatch) {
-                    title = beforeSeriesMatch[1].trim();
-                }
-
+                if (beforeSeriesMatch) title = beforeSeriesMatch[1].trim();
                 title = title.replace(seriesName, '');
             }
         }
 
-        // Check if there is a subtitle (separated by : or -)
         if (title.includes(':') || title.includes('-')) {
             const parts = title.split(/[:\-]/);
             if (parts[1] && parts[1].trim().length >= 3) {
@@ -207,19 +142,11 @@ class StorytelProvider {
             }
         }
 
-        // Final cleanup of title
-        allPatterns.forEach(pattern => {
-            title = title.replace(pattern, '');
-        });
-
+        patterns.forEach(pattern => title = title.replace(pattern, ''));
         title = title.trim();
-        if (subtitle) {
-            subtitle = subtitle.trim();
-        }
+        if (subtitle) subtitle = subtitle.trim();
 
-        const genres = book.category
-            ? this.splitGenre(this.ensureString(book.category.title))
-            : [];
+        const genres = book.category ? this.splitGenre(this.ensureString(book.category.title)) : [];
 
         const metadata = {
             title: this.ensureString(title),
@@ -237,25 +164,13 @@ class StorytelProvider {
             isbn: this.ensureString(abook ? abook.isbn : ebook?.isbn)
         };
 
-        // Remove undefined values
-        Object.keys(metadata).forEach(key =>
-            metadata[key] === undefined && delete metadata[key]
-        );
-
+        Object.keys(metadata).forEach(key => metadata[key] === undefined && delete metadata[key]);
         return metadata;
     }
 
-    /**
-     * Searches for books in the Storytel API
-     * @param query {string} Search query
-     * @param author {string} Optional author filter
-     * @param locale {string} Locale for the search
-     * @returns {Promise<{matches: *[]}>}
-     */
     async searchBooks(query, author = '', locale) {
         const cleanQuery = query.split(':')[0].trim();
         const formattedQuery = cleanQuery.replace(/\s+/g, '+');
-
         const cacheKey = `${formattedQuery}-${author}-${locale}`;
 
         const cachedResult = cache.get(cacheKey);
@@ -263,14 +178,14 @@ class StorytelProvider {
             return cachedResult;
         }
 
+        const sessionUserAgent = this.getNextUserAgent();
+
         try {
-            const searchResponse = await axios.get(this.baseSearchUrl, {
+            const searchAxios = this.createFreshAxios(sessionUserAgent);
+            const searchResponse = await searchAxios.get(this.baseSearchUrl, {
                 params: {
                     request_locale: locale,
                     q: formattedQuery
-                },
-                headers: {
-                    'User-Agent': 'Storytel ABS-Scraper'
                 }
             });
 
@@ -281,17 +196,29 @@ class StorytelProvider {
             const books = searchResponse.data.books.slice(0, 5);
             console.log(`Found ${books.length} books in search results`);
 
-            const matches = await Promise.all(books.map(async book => {
-                if (!book.book || !book.book.id) return null;
-                const bookDetails = await this.getBookDetails(book.book.id, locale);
-                if (!bookDetails) return null;
+            const matches = [];
+            
+            for (let i = 0; i < books.length; i++) {
+                const book = books[i];
+                if (!book.book || !book.book.id) continue;
+                
+                // Small delay between detail requests to be polite
+                if (i > 0) {
+                    await delay(1000);
+                }
+                
+                const bookDetails = await this.getBookDetails(book.book.id, locale, sessionUserAgent);
+                
+                if (bookDetails) {
+                    const formatted = this.formatBookMetadata(bookDetails);
+                    if (formatted) {
+                        matches.push(formatted);
+                    }
+                }
+            }
 
-                return this.formatBookMetadata(bookDetails);
-            }));
-
-            const validMatches = matches.filter(match => match !== null);
-
-            const result = { matches: validMatches };
+            console.log(`Successfully fetched ${matches.length} books`);
+            const result = { matches };
             cache.set(cacheKey, result);
             return result;
         } catch (error) {
@@ -300,21 +227,14 @@ class StorytelProvider {
         }
     }
     
-    /**
-    * Gets detailed book information from Storytel API
-    * @param bookId {string|number} The book ID to fetch details for
-    * @param locale {string} Locale for the request
-    * @returns {Promise<*>}
-    */
-    async getBookDetails(bookId, locale) {
+    async getBookDetails(bookId, locale, userAgent) {
         try {
-            const response = await axios.get(this.baseBookUrl, {
+            const detailAxios = this.createFreshAxios(userAgent);
+            
+            const response = await detailAxios.get(this.baseBookUrl, {
                 params: {
                     bookId: bookId,
                     request_locale: locale
-                },
-                headers: {
-                    'User-Agent': 'Storytel ABS-Scraper'
                 }
             });
             
