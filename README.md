@@ -1,6 +1,9 @@
 # Storytel Provider for Audiobookshelf
 A metadata provider that fetches book information from Storytel's API.
 
+## Fixes in this fork (not commited)
+- Fixes the 403 error by adding user agent rotation between requests. (The original is annoucning itself as 'Storytel ABS-Scraper' which Storytel is apparently blocking after 1 successful search.
+
 ## Features
 - High-resolution cover images (640x640)
 - Smart title and series handling
