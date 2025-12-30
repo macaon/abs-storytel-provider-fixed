@@ -176,7 +176,7 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 ## Credits
 
 * Original project by [Revisor01](https://github.com/Revisor01/abs-storytel-provider)
-* User-Agent rotation fix by [YOUR-NAME]
+* User-Agent rotation fix by macaon
 * Built for [Audiobookshelf](https://www.audiobookshelf.org/)
 
 ## License
