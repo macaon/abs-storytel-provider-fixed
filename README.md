@@ -23,39 +23,9 @@ Storytel's API tracks browser sessions and blocks repeated requests from the sam
 
 ## Installation
 
-### Using Docker Compose (Recommended)
-
-1. Create a `docker-compose.yml` file:
-```yaml
-version: "3.8"
-services:
-  abs-storytel-provider:
-    image: your-dockerhub-username/abs-storytel-provider-fixed:latest
-    container_name: abs-storytel-provider
-    restart: unless-stopped
-    networks:
-      - abs_network
-    security_opt:
-      - no-new-privileges:true
-
-networks:
-  abs_network:
-    external: true
-```
-
-2. Ensure the `abs_network` exists:
-```bash
-docker network create abs_network
-```
-
-3. Start the container:
-```bash
-docker-compose up -d
-```
-
 ### Building from Source
 ```bash
-git clone https://github.com/YOUR-USERNAME/abs-storytel-provider-fixed.git
+git clone https://github.com/macaon/abs-storytel-provider-fixed.git
 cd abs-storytel-provider-fixed
 docker build -t abs-storytel-provider-fixed .
 docker run -d --name abs-storytel-provider --network abs_network abs-storytel-provider-fixed
