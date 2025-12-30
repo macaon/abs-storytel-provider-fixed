@@ -39,8 +39,7 @@ docker run -d --name abs-storytel-provider --network abs_network abs-storytel-pr
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true
-
-
+```
 ## Configuration in Audiobookshelf
 
 1. Go to **Settings** → **Metadata** in Audiobookshelf
