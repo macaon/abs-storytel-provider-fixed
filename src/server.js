@@ -1,4 +1,3 @@
-// server.js
 const express = require('express');
 const cors = require('cors');
 const StorytelProvider = require('./provider');
@@ -26,15 +25,14 @@ const validateRegion = (req, res, next) => {
     next();
 };
 
-// Original search endpoint
 app.get('/:region/search', checkAuth, validateRegion, async (req, res) => {
     const { query = '', author = '' } = req.query;
     const region = req.params.region;
-
+    
     if (!query) {
         return res.status(400).json({ error: 'Query parameter is required' });
     }
-
+    
     try {
         const results = await provider.searchBooks(query, author, region);
         res.json(results);
@@ -44,45 +42,40 @@ app.get('/:region/search', checkAuth, validateRegion, async (req, res) => {
     }
 });
 
-// E-Book search endpoint
 app.get('/:region/book/search', checkAuth, validateRegion, async (req, res) => {
     const { query = '', author = '' } = req.query;
     const region = req.params.region;
-
+    
     if (!query) {
         return res.status(400).json({ error: 'Query parameter is required' });
     }
-
+    
     try {
         const results = await provider.searchBooks(query, author, region);
         const ebooks = results.matches.filter(book => 
-            book && !book.duration // Filter für E-Books (keine duration = E-Book)
+            book && !book.duration
         );
-
-        res.json({
-            matches: ebooks
-        });
+        res.json({ matches: ebooks });
     } catch (error) {
         console.error('Book search error:', error);
         res.status(500).json({ error: 'Internal server error' });
     }
 });
 
-// Audiobook search endpoint
 app.get('/:region/audiobook/search', checkAuth, validateRegion, async (req, res) => {
     const { query = '', author = '' } = req.query;
     const region = req.params.region;
-
+    
     if (!query) {
         return res.status(400).json({ error: 'Query parameter is required' });
     }
-
+    
     try {
         const results = await provider.searchBooks(query, author, region);
         const audiobooks = results.matches.filter(book => 
             book && book.duration !== undefined
         );
-
+        
         const stats = {
             total: audiobooks.length,
             withNarrator: audiobooks.filter(b => b.narrator).length,
@@ -90,11 +83,8 @@ app.get('/:region/audiobook/search', checkAuth, validateRegion, async (req, res)
                 ? Math.round(audiobooks.reduce((acc, b) => acc + (b.duration || 0), 0) / audiobooks.length)
                 : 0
         };
-
-        res.json({
-            matches: audiobooks,
-            stats
-        });
+        
+        res.json({ matches: audiobooks, stats });
     } catch (error) {
         console.error('Audiobook search error:', error);
         res.status(500).json({ error: 'Internal server error' });
