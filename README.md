@@ -31,6 +31,16 @@ docker build -t abs-storytel-provider-fixed .
 docker run -d --name abs-storytel-provider --network abs_network abs-storytel-provider-fixed
 ```
 
+### docker-compose
+```services:
+  abs-storytel-provider:
+    image: abs-storytel-provider-fixed:latest
+    container_name: abs-storytel-provider
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+
+
 ## Configuration in Audiobookshelf
 
 1. Go to **Settings** → **Metadata** in Audiobookshelf
